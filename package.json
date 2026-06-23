@@ -1,0 +1,17 @@
+{
+  "name": "imhelping",
+  "version": "0.1.0",
+  "description": "Markdown-ledger task loop runner for headless coding CLIs.",
+  "type": "module",
+  "bin": {
+    "imhelping": "./imhelping.mjs"
+  },
+  "scripts": {
+    "check": "node --check imhelping.mjs && node --check imhelping.test.mjs",
+    "test": "node --test imhelping.test.mjs"
+  },
+  "license": "MIT",
+  "engines": {
+    "node": ">=22"
+  }
+}
