@@ -10,12 +10,37 @@ It keeps state outside the model context:
 
 Each implementation or review stage starts as a fresh CLI process.
 
+## Install
+
+```bash
+npm install -g github:PaulHax/imhelping   # or, from a checkout: npm link
+```
+
+This puts `imhelping` on your PATH. You never need to vendor this repo into a
+project. Keep one install and put each session's `imhelping.json` + `PROGRESS.md`
+**next to the plan doc** it drives; the bundled prompts are resolved from the
+install, not from the session dir.
+
+## Quickstart
+
+```bash
+imhelping init --plan ./PLAN.md --workdir /path/to/checkout --name my-loop
+# edit the generated PROGRESS.md: set GATE-APP and the checklist
+imhelping status --config ./imhelping.json
+imhelping loop   --config ./imhelping.json
+```
+
+`init` scaffolds `imhelping.json` and a `PROGRESS.md` skeleton in the config's
+directory (default: the current dir) and never overwrites existing files unless
+you pass `--force`.
+
 ## Commands
 
 ```bash
-node imhelping.mjs status --config imhelping.json
-node imhelping.mjs once --config imhelping.json
-node imhelping.mjs loop --config imhelping.json
+imhelping init   --plan PLAN.md --workdir DIR   # scaffold a session
+imhelping status --config imhelping.json        # print next action, no run
+imhelping once   --config imhelping.json        # run the next ready stage
+imhelping loop   --config imhelping.json        # run until done or blocked
 ```
 
 `once` runs the next ready stage. `loop` keeps running stages until the ledger is
@@ -96,6 +121,15 @@ Reusable base prompts live under [prompts](prompts/):
 - [base-review.md](prompts/base-review.md)
 - [base-review-with-simplify.md](prompts/base-review-with-simplify.md)
 - [base-verifier.md](prompts/base-verifier.md)
+
+Each stage's `prompt` is optional and resolves in three forms:
+
+- **omitted** — the bundled default (`base-implementation` for the
+  implementation stage, `base-review` for a review stage).
+- **a bare name** like `"base-review-with-simplify"` — resolved from the
+  installed `prompts/` dir, so a config beside a plan doc needs no path back into
+  this checkout.
+- **a path** — resolved relative to the config file.
 
 Use the base prompts across projects and put project-specific paths, gates,
 constraints, and item briefs in the ledger. See
