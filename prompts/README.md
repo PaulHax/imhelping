@@ -26,13 +26,16 @@ Then point `imhelping.json` stages at one of these templates:
     {
       "key": "review-a",
       "engine": "claude",
-      "prompt": "prompts/base-review-with-simplify.md",
+      "prompt": "prompts/base-review-with-codex.md",
       "status": "REVIEWED-A"
     }
   ]
 }
 ```
 
-Use `base-review-with-simplify.md` when the review worker should use native
-review and simplify tools if the current CLI exposes them. Use `base-review.md`
-for correctness-only review passes.
+Use `base-review-with-codex.md` (the `init` default) when the Claude reviewer
+should run an independent `codex` reviewer in parallel, then merge and
+de-duplicate both sets of findings before applying fixes; the second reviewer is
+best-effort and never stalls the loop. Use `base-review-with-simplify.md` when
+the review worker should use native review and simplify tools if the current CLI
+exposes them. Use `base-review.md` for correctness-only review passes.

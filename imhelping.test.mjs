@@ -227,7 +227,8 @@ test("init scaffolds a usable config and ledger next to the plan doc", async () 
   assert.equal(config.implementation.engine, "codex");
   assert.equal(path.basename(config.implementation.prompt), "base-implementation.md");
   assert.equal(config.reviews[0].engine, "claude");
-  assert.equal(path.basename(config.reviews[0].prompt), "base-review-with-simplify.md");
+  assert.equal(path.basename(config.reviews[0].prompt), "base-review-with-codex.md");
+  assert.ok(fsSync.existsSync(config.reviews[0].prompt));
 
   // A second init must not clobber an edited ledger.
   await fs.writeFile(path.join(root, "session", "PROGRESS.md"), "edited\n");
