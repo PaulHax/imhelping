@@ -619,12 +619,13 @@ Durable loop state for imhelping. ${planLine}
 }
 
 export async function cmdInit(configPath, opts = {}) {
-  const resolved = path.resolve(configPath || "imhelping.json");
+  const cwd = process.cwd();
+  const resolved = resolvePath(cwd, configPath || "imhelping.json");
   const dir = path.dirname(resolved);
   await fs.mkdir(dir, { recursive: true });
   const name = opts.name || path.basename(dir);
-  const workdir = opts.workdir ? path.resolve(opts.workdir) : ".";
-  const planAbs = opts.plan ? path.resolve(opts.plan) : "";
+  const workdir = opts.workdir ? resolvePath(cwd, opts.workdir) : ".";
+  const planAbs = opts.plan ? resolvePath(cwd, opts.plan) : "";
   const addDirs = planAbs ? [path.dirname(planAbs)] : [];
   const progressPath = path.join(dir, "PROGRESS.md");
 
