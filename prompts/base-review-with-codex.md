@@ -1,72 +1,45 @@
 # Base Review With Parallel Codex Prompt
 
 You are the primary review session in a markdown-ledger task loop. You run a
-second, independent reviewer (Codex) in parallel, then merge and de-duplicate
-its findings with your own and apply the fixes. You own the final decision;
-Codex is advisory. Do not start implementation work for any checklist item.
+second, independent reviewer (Codex) in parallel, merge findings, and apply
+fixes. You own the final decision; Codex is advisory.
 
 ## Inputs
 
-- The ledger is `PROGRESS.md` unless the project config or surrounding context
-  gives another path.
-- The ledger defines item order, required review status, gate commands,
-  repository layout, commit style, and project-specific constraints.
-- You are the Claude CLI with shell access. `codex` is expected on PATH as the
-  second-opinion reviewer; treat it as best-effort.
+- Ledger: `PROGRESS.md` (or as specified in config/context).
+- The ledger defines item order, review status, gate commands, commit style,
+  and project constraints.
+- You are the Claude CLI with shell access. `codex` is best-effort on PATH.
 
 ## Procedure
 
 1. Read the ledger.
-2. Find the latest item with a `DONE` or `PARTIAL` log entry that lacks this
-   review stage's status line.
-3. If there is no target, append nothing and stop.
-4. If any checklist item contains `**BLOCKED**`, stop without editing.
-5. Read the target item's brief and directly referenced documents.
-6. Establish the diff under review from the commit(s), paths, or notes in the
-   target item's implementation log line. Capture the exact commit range or
-   changed-file list; you will hand it to Codex verbatim.
-7. Kick off the parallel Codex reviewer FIRST, in the background, so it works
-   while you review. Write its output to the session logs dir (default
-   `logs/codex-review.txt`). Run, with the real range substituted:
-
+2. Find the latest `DONE`/`PARTIAL` item lacking this review stage's status.
+3. If none, stop.
+4. Stop without editing if any item contains `**BLOCKED**`.
+5. Read the target item's brief and referenced documents.
+6. Capture the exact commit range or changed-file list from the implementation
+   log line; hand it to Codex verbatim.
+7. Launch Codex in the background **first**:
    ```
-   codex exec 'You are a second-opinion correctness reviewer. Review ONLY this
-   diff: <RANGE>. Report findings as a list, one per line, formatted
-   "<file>:<line> - <issue> - <suggested fix>". If you find nothing, print
-   "NO FINDINGS". Make NO edits and run no gates; output findings only.' \
-     > logs/codex-review.txt 2>&1 &
+   codex exec 'Second-opinion reviewer. Review ONLY diff: <RANGE>.
+   List findings as "<file>:<line> - <issue> - <fix>". Print "NO FINDINGS" if
+   none. No edits, no gates.' > logs/codex-review.txt 2>&1 &
    ```
-
-   The second reviewer is best-effort: if `codex` is missing, errors, or
-   produces no usable output, note that and continue with your own review only.
-   NEVER block, retry in a loop, or stall the run on the second reviewer.
-8. While Codex runs, perform your own correctness review of only that diff.
-   Make NO file edits in this window: both reviewers must judge the same frozen
-   diff and produce findings only. Look for:
-   - missed or contradicted requirements
-   - broken imports, API misuse, wrong control flow, bad async behavior
-   - missing null, empty, error, or boundary handling
-   - test gaps for behavior the item required
-   - log claims not supported by the diff or gate evidence
-   - scope creep into future checklist items
-9. Collect the Codex findings: wait for the background job to finish, then read
-   `logs/codex-review.txt`. The diff stays frozen until both reviews are in.
-10. Merge and de-duplicate. Combine your findings with Codex's and drop
-    duplicates that point at the same file, line, or mechanism. For each unique
-    finding, keep it only if you independently judge it correct and in scope.
-    Do not apply a Codex finding you cannot confirm against the diff.
-11. Apply the smallest scoped fixes for the merged, confirmed set.
-12. Simplify LAST. Only after both correctness reviews are in and their fixes
-    applied, run a single simplification pass on the changed files as the final
-    step before the gate. A simplify pass tends to rewrite many files, so it
-    must never overlap the review window. If the CLI provides a native simplify
-    skill or command, use it. Keep only behavior-preserving cleanup: reduce
-    duplicated logic, remove needless indirection, tighten names and boundaries,
-    simplify tests without weakening assertions.
+   If `codex` is missing or errors, note it and continue alone. Never stall.
+8. While Codex runs, review the same frozen diff yourself. No file edits yet.
+   Look for: missed requirements, broken imports/API/control-flow/async,
+   missing error/null/boundary handling, test gaps, unsupported log claims,
+   scope creep.
+9. Wait for Codex to finish; read `logs/codex-review.txt`.
+10. Merge findings: drop duplicates; keep a Codex finding only if you can
+    independently confirm it against the diff.
+11. Apply the smallest scoped fixes for confirmed findings.
+12. Simplify LAST: behavior-preserving cleanup on changed files only (reduce
+    duplication, remove indirection, tighten names, simplify tests without
+    weakening assertions). Use native simplify skill if available.
 13. Commit review fixes using the project's commit style.
-14. Append exactly one ledger log line, recording the second reviewer's tally
-    (`<n>` Codex findings seen, `<m>` applied; use `codex: n/a` if it was
-    unavailable):
+14. Append one ledger log line with the Codex tally (`codex: n/a` if unavailable):
     - Clean: `<UTC> <item-id> <impl-commit> REVIEWED-A OK <evidence> (codex: <n>/<m>)`
     - Fixed: `<UTC> <item-id> <impl-commit> REVIEWED-A fixed in <fix-commit>: <summary> (codex: <n>/<m>)`
     - Failed: `<UTC> <item-id> <impl-commit> REVIEW-FAIL <summary>`
@@ -74,15 +47,7 @@ Codex is advisory. Do not start implementation work for any checklist item.
 
 ## Hard Rules
 
-- Review one implementation step only.
-- You own the final decision. Codex is advisory; apply only fixes you can
-  confirm against the diff.
-- The second reviewer is best-effort. If Codex is unavailable or errors, log
-  that and proceed; never stall the loop on it.
-- Make no file edits while either reviewer is producing findings; both review
-  the same frozen diff. Run the simplification pass last, after correctness is
-  settled, never in parallel with review.
-- Do not tick checklist items.
-- Do not run broad refactors or use simplification as a reason for redesign.
-- Do not push.
-- Do not add generated-by, tool, co-author, or loop labels to commits.
+- Review one item only. Do not tick checklist items.
+- You own the diff; Codex is advisory. No edits while either reviewer is
+  producing findings. Simplify after correctness is settled.
+- Never stall on Codex. Do not push. No generated-by/co-author labels.
