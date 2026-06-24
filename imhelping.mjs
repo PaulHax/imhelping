@@ -6,7 +6,11 @@ import fs from "node:fs/promises";
 import fsSync from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { spawn, spawnSync } from "node:child_process";
+
+const PKG_DIR = path.dirname(fileURLToPath(import.meta.url));
+const BUNDLED_PROMPTS_DIR = path.join(PKG_DIR, "prompts");
 
 const LIMIT_RE =
   /usage limit|rate limit|spend limit|quota|insufficient_quota|too many requests|\b429\b|resource[ _]exhausted|limit (will )?reset|reset[s]? (in|at)|out of (credit|quota)|try again (later|in)|exceeded your/i;
@@ -58,13 +62,34 @@ function asArray(value) {
     .filter(Boolean);
 }
 
-function stageFrom(raw, key, base, defaultStatus) {
+function bundledPrompt(name) {
+  const file = name.endsWith(".md") ? name : `${name}.md`;
+  return path.join(BUNDLED_PROMPTS_DIR, file);
+}
+
+// Resolve a stage's prompt. Three forms, in priority order:
+//   1. omitted        -> the bundled default for this stage type
+//   2. a bare name     -> that file under the installed prompts/ dir
+//   3. a path           -> resolved relative to the config file's dir
+// Forms 1 and 2 let a config that lives next to a plan doc (outside this
+// checkout) reuse the shipped prompts without a relative path back into it.
+function resolvePromptRef(base, value, defaultPrompt) {
+  const raw = String(value || "").trim();
+  if (!raw) return defaultPrompt ? bundledPrompt(defaultPrompt) : "";
+  if (!raw.includes("/") && !raw.includes("\\")) {
+    const candidate = bundledPrompt(raw);
+    if (fsSync.existsSync(candidate)) return candidate;
+  }
+  return resolvePath(base, raw);
+}
+
+function stageFrom(raw, key, base, defaultStatus, defaultPrompt = "") {
   const engine = String(raw.engine || "none").toLowerCase();
   return {
     key,
     label: raw.label || key,
     engine,
-    prompt: resolvePath(base, raw.prompt || ""),
+    prompt: resolvePromptRef(base, raw.prompt, defaultPrompt),
     status: raw.status || defaultStatus,
     model: raw.model || "",
     args: asArray(raw.args),
@@ -91,10 +116,11 @@ export async function readConfig(configPath) {
     "implementation",
     base,
     "DONE",
+    "base-implementation",
   );
   const reviews = [];
   for (const review of raw.reviews || []) {
-    const stage = stageFrom(review, review.key, base, "REVIEWED");
+    const stage = stageFrom(review, review.key, base, "REVIEWED", "base-review");
     if (stage.enabled) reviews.push(stage);
   }
   return {
@@ -285,7 +311,13 @@ async function teeRun(commandSpec, cwd, prompt, logPath) {
     cwd,
     stdio: ["pipe", "pipe", "pipe"],
   });
-  createReadStream(prompt).pipe(child.stdin);
+  // A stage CLI can exit before consuming the whole prompt (e.g. it bails on a
+  // usage limit). The unfinished write to its stdin then raises EPIPE; swallow
+  // it on both ends so an early exit is handled by exit code, not a crash.
+  const input = createReadStream(prompt);
+  input.on("error", () => {});
+  child.stdin.on("error", () => {});
+  input.pipe(child.stdin);
   const writeChunk = (chunk) => {
     process.stdout.write(chunk);
     log.write(chunk);
@@ -472,35 +504,148 @@ export async function cmdLoop(config) {
   return 9;
 }
 
+function initConfig({ name, workdir, addDirs }) {
+  return {
+    session: {
+      name,
+      workdir,
+      progress: "PROGRESS.md",
+      logs: "logs",
+      addDirs,
+      watchGit: [workdir],
+      watchFiles: [],
+      maxSteps: 40,
+    },
+    implementation: { engine: "codex" },
+    reviews: [
+      {
+        key: "review-a",
+        engine: "claude",
+        prompt: "base-review-with-simplify",
+        status: "REVIEWED-A",
+      },
+    ],
+  };
+}
+
+function initProgress({ name, workdir, plan }) {
+  const planLine = plan
+    ? `Plan doc: \`${plan}\`. Decompose it into the checklist below.`
+    : "Describe the work, then decompose it into the checklist below.";
+  return `# ${name} Progress Ledger
+
+Durable loop state for imhelping. ${planLine}
+
+## Repositories
+
+| Alias | Path | Notes |
+| --- | --- | --- |
+| APP | \`${workdir}\` | Target checkout the loop edits. |
+
+## Gates
+
+- **GATE-APP**: \`<command that must pass before each commit>\`
+
+## Conventions
+
+- One checklist item per session. Practice red -> green TDD: write the failing
+  test first, then make it pass. Never advance past a red gate.
+- Add an end-to-end test for any item with user-visible behavior; pure-logic
+  items get a unit test instead.
+
+## Checklist
+
+- [ ] T1 — <first item title>
+  - Brief: <what to do; reference the plan section and file:symbol touch points>.
+  - Done means: <observable acceptance>.
+  - TDD: write <the failing test> first (red), then <green criteria>.
+  - E2E: <assertion on rendered/observable output, or "n/a — pure unit">.
+  - Scope: APP only.
+  - Gate: GATE-APP.
+
+## Log
+
+<!-- append: \`<UTC> <item-id> <commit-or-paths> DONE <note>\` -->
+`;
+}
+
+export async function cmdInit(configPath, opts = {}) {
+  const resolved = path.resolve(configPath || "imhelping.json");
+  const dir = path.dirname(resolved);
+  await fs.mkdir(dir, { recursive: true });
+  const name = opts.name || path.basename(dir);
+  const workdir = opts.workdir ? path.resolve(opts.workdir) : ".";
+  const planAbs = opts.plan ? path.resolve(opts.plan) : "";
+  const addDirs = planAbs ? [path.dirname(planAbs)] : [];
+  const progressPath = path.join(dir, "PROGRESS.md");
+
+  const targets = [
+    { file: resolved, body: `${JSON.stringify(initConfig({ name, workdir, addDirs }), null, 2)}\n` },
+    { file: progressPath, body: initProgress({ name, workdir, plan: planAbs }) },
+  ];
+  for (const { file, body } of targets) {
+    if (!opts.force && fsSync.existsSync(file)) {
+      console.log(`exists, left unchanged: ${file} (use --force to overwrite)`);
+      continue;
+    }
+    await fs.writeFile(file, body);
+    console.log(`wrote ${file}`);
+  }
+  console.log(`\nNext: fill the checklist and GATE-APP in ${progressPath}, then run:`);
+  console.log(`  imhelping status --config ${resolved}`);
+  console.log(`  imhelping loop --config ${resolved}`);
+  return 0;
+}
+
 function parseArgs(argv) {
   const args = [...argv];
   let config = "imhelping.json";
-  const takeConfig = (index) => {
-    if (!args[index + 1]) throw new Error("--config requires a path");
-    config = args[index + 1];
-    args.splice(index, 2);
-  };
+  const opts = {};
+  const positional = [];
   for (let i = 0; i < args.length; i += 1) {
-    if (args[i] === "--config") {
-      takeConfig(i);
-      i -= 1;
+    const arg = args[i];
+    if (arg === "--help" || arg === "-h") {
+      positional.push(arg);
+    } else if (arg === "--config") {
+      if (!args[i + 1]) throw new Error("--config requires a path");
+      config = args[i + 1];
+      i += 1;
+    } else if (arg === "--force") {
+      opts.force = true;
+    } else if (arg.startsWith("--")) {
+      if (!args[i + 1]) throw new Error(`${arg} requires a value`);
+      opts[arg.slice(2)] = args[i + 1];
+      i += 1;
+    } else {
+      positional.push(arg);
     }
   }
-  const command = args.shift();
+  const command = positional.shift();
   if (!command || ["-h", "--help"].includes(command)) {
-    return { help: true, config };
+    return { help: true, config, opts };
   }
-  return { command, config, rest: args };
+  return { command, config, opts, rest: positional };
 }
 
 function printHelp() {
-  console.log(`Usage: imhelping.mjs [--config PATH] <status|once|stage|loop> [stage-key]
+  console.log(`Usage: imhelping [--config PATH] <init|status|once|stage|loop> [stage-key]
 
 Commands:
+  init     Scaffold imhelping.json + PROGRESS.md next to the plan doc
   status   Print the next action without running a stage
   once     Run the next ready headless stage
   stage    Run a named stage only if it is next
-  loop     Repeatedly run headless stages until done or blocked`);
+  loop     Repeatedly run headless stages until done or blocked
+
+init options:
+  --plan PATH      Plan/spec doc; its dir is added to addDirs
+  --workdir PATH   Target checkout the loop edits (default ".")
+  --name NAME      Session name (default: config dir name)
+  --force          Overwrite existing imhelping.json / PROGRESS.md
+
+Prompts: a stage "prompt" may be omitted (uses the bundled default), a bare
+name like "base-review-with-simplify" (resolved from the installed prompts/),
+or a path relative to the config file.`);
 }
 
 export async function main(argv = process.argv.slice(2)) {
@@ -509,6 +654,7 @@ export async function main(argv = process.argv.slice(2)) {
     printHelp();
     return 0;
   }
+  if (parsed.command === "init") return cmdInit(parsed.config, parsed.opts);
   const config = await readConfig(parsed.config);
   if (parsed.command === "status") return cmdStatus(config);
   if (parsed.command === "once") return cmdOnce(config);
@@ -518,7 +664,10 @@ export async function main(argv = process.argv.slice(2)) {
   return 2;
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+// Resolve argv[1] through any symlink so the entrypoint check holds when the
+// script is launched via the npm `bin` symlink, not just `node imhelping.mjs`.
+const invokedPath = process.argv[1] ? fsSync.realpathSync(process.argv[1]) : "";
+if (invokedPath === fileURLToPath(import.meta.url)) {
   main().then((status) => process.exit(status)).catch((error) => {
     console.error(error.message || error);
     process.exit(1);

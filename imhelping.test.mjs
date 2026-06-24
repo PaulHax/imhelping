@@ -5,7 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 
-import { cmdOnce, nextAction, readConfig } from "./imhelping.mjs";
+import { cmdInit, cmdOnce, nextAction, readConfig } from "./imhelping.mjs";
 
 async function tempDir() {
   return fs.mkdtemp(path.join(os.tmpdir(), "imhelping-"));
@@ -161,6 +161,70 @@ test("conditional verifier skips unmarked items", async () => {
   assert.equal(action.kind, "stage");
   assert.equal(action.item.itemId, "F2");
   assert.equal(action.stage.key, "implementation");
+});
+
+test("omitted prompt falls back to the bundled stage default", async () => {
+  const root = await tempDir();
+  await fs.writeFile(path.join(root, "PROGRESS.md"), "## Checklist\n- [ ] T1 — x\n\n## Log\n");
+  const configPath = path.join(root, "imhelping.json");
+  await writeJson(configPath, {
+    session: { name: "defaults", workdir: root, progress: "PROGRESS.md", logs: "logs" },
+    implementation: { engine: "codex" },
+    reviews: [{ key: "review-a", engine: "claude", status: "REVIEWED-A" }],
+  });
+
+  const config = await readConfig(configPath);
+
+  assert.equal(path.basename(config.implementation.prompt), "base-implementation.md");
+  assert.ok(fsSync.existsSync(config.implementation.prompt));
+  assert.equal(path.basename(config.reviews[0].prompt), "base-review.md");
+  assert.ok(fsSync.existsSync(config.reviews[0].prompt));
+});
+
+test("a bare prompt name resolves against the installed prompts dir", async () => {
+  const root = await tempDir();
+  await fs.writeFile(path.join(root, "PROGRESS.md"), "## Checklist\n- [ ] T1 — x\n\n## Log\n");
+  const configPath = path.join(root, "imhelping.json");
+  await writeJson(configPath, {
+    session: { name: "bare", workdir: root, progress: "PROGRESS.md", logs: "logs" },
+    implementation: { engine: "codex", prompt: "base-verifier" },
+    reviews: [],
+  });
+
+  const config = await readConfig(configPath);
+
+  assert.equal(path.basename(config.implementation.prompt), "base-verifier.md");
+  assert.ok(fsSync.existsSync(config.implementation.prompt));
+});
+
+test("init scaffolds a usable config and ledger next to the plan doc", async () => {
+  const root = await tempDir();
+  const plan = path.join(root, "plan", "BUILD.md");
+  await fs.mkdir(path.dirname(plan), { recursive: true });
+  await fs.writeFile(plan, "# build it\n");
+  const workdir = path.join(root, "checkout");
+  await fs.mkdir(workdir);
+  const configPath = path.join(root, "session", "imhelping.json");
+
+  const status = await cmdInit(configPath, { plan, workdir, name: "demo" });
+  assert.equal(status, 0);
+
+  assert.ok(fsSync.existsSync(configPath));
+  assert.ok(fsSync.existsSync(path.join(root, "session", "PROGRESS.md")));
+
+  const config = await readConfig(configPath);
+  assert.equal(config.name, "demo");
+  assert.equal(config.workdir, workdir);
+  assert.deepEqual(config.addDirs, [path.dirname(plan)]);
+  assert.equal(config.implementation.engine, "codex");
+  assert.equal(path.basename(config.implementation.prompt), "base-implementation.md");
+  assert.equal(config.reviews[0].engine, "claude");
+  assert.equal(path.basename(config.reviews[0].prompt), "base-review-with-simplify.md");
+
+  // A second init must not clobber an edited ledger.
+  await fs.writeFile(path.join(root, "session", "PROGRESS.md"), "edited\n");
+  await cmdInit(configPath, { plan, workdir, name: "demo" });
+  assert.equal(await fs.readFile(path.join(root, "session", "PROGRESS.md"), "utf8"), "edited\n");
 });
 
 for (const engine of ["codex", "claude"]) {
