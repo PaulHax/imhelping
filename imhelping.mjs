@@ -147,6 +147,7 @@ export async function readConfig(configPath) {
     requireProgressChange:
       session.requireProgressChange ?? session.require_progress_change ?? true,
     logAfter: session.logAfter || session.log_after || "",
+    pauseFile: resolvePath(base, session.pauseFile || session.pause_file || "imhelping.pause"),
     implementation,
     reviews,
   };
@@ -487,6 +488,13 @@ export async function cmdOnce(config, requestedStage = "") {
 
 export async function cmdLoop(config) {
   for (let step = 1; step <= config.maxSteps; step += 1) {
+    // Clean-pause check at the iteration boundary: a stage already running this
+    // step is allowed to finish (commit + log) before the loop stops, so state
+    // stays consistent and resumable.
+    if (fsSync.existsSync(config.pauseFile)) {
+      console.log(`paused: ${config.pauseFile} exists. Clear it with \`imhelping resume\`, then \`imhelping loop\`.`);
+      return 14;
+    }
     console.log(`=== loop step ${step}/${config.maxSteps} ===`);
     const action = await nextAction(config);
     if (action.kind === "done") {
@@ -502,6 +510,25 @@ export async function cmdLoop(config) {
   }
   console.log(`maxSteps=${config.maxSteps} reached`);
   return 9;
+}
+
+export async function cmdPause(config) {
+  await fs.mkdir(path.dirname(config.pauseFile), { recursive: true });
+  await fs.writeFile(config.pauseFile, `${utcLogTime()} paused\n`);
+  console.log("paused: a running loop will stop after the current stage finishes.");
+  console.log(`sentinel: ${config.pauseFile}`);
+  console.log(`resume with: imhelping resume --config ${config.path}`);
+  return 0;
+}
+
+export async function cmdResume(config) {
+  if (fsSync.existsSync(config.pauseFile)) {
+    await fs.rm(config.pauseFile);
+    console.log(`resumed: removed ${config.pauseFile}. Run \`imhelping loop\` to continue.`);
+  } else {
+    console.log(`not paused: no sentinel at ${config.pauseFile}.`);
+  }
+  return 0;
 }
 
 function initConfig({ name, workdir, addDirs }) {
@@ -628,7 +655,7 @@ function parseArgs(argv) {
 }
 
 function printHelp() {
-  console.log(`Usage: imhelping [--config PATH] <init|status|once|stage|loop> [stage-key]
+  console.log(`Usage: imhelping [--config PATH] <init|status|once|stage|loop|pause|resume> [stage-key]
 
 Commands:
   init     Scaffold imhelping.json + PROGRESS.md next to the plan doc
@@ -636,6 +663,8 @@ Commands:
   once     Run the next ready headless stage
   stage    Run a named stage only if it is next
   loop     Repeatedly run headless stages until done or blocked
+  pause    Arm a clean pause; a running loop stops after the current stage
+  resume   Clear the pause so loop can continue
 
 init options:
   --plan PATH      Plan/spec doc; its dir is added to addDirs
@@ -660,6 +689,8 @@ export async function main(argv = process.argv.slice(2)) {
   if (parsed.command === "once") return cmdOnce(config);
   if (parsed.command === "stage") return cmdOnce(config, parsed.rest[0] || "");
   if (parsed.command === "loop") return cmdLoop(config);
+  if (parsed.command === "pause") return cmdPause(config);
+  if (parsed.command === "resume") return cmdResume(config);
   printHelp();
   return 2;
 }

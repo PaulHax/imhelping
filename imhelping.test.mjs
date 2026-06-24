@@ -5,7 +5,15 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 
-import { cmdInit, cmdOnce, nextAction, readConfig } from "./imhelping.mjs";
+import {
+  cmdInit,
+  cmdLoop,
+  cmdOnce,
+  cmdPause,
+  cmdResume,
+  nextAction,
+  readConfig,
+} from "./imhelping.mjs";
 
 async function tempDir() {
   return fs.mkdtemp(path.join(os.tmpdir(), "imhelping-"));
@@ -225,6 +233,29 @@ test("init scaffolds a usable config and ledger next to the plan doc", async () 
   await fs.writeFile(path.join(root, "session", "PROGRESS.md"), "edited\n");
   await cmdInit(configPath, { plan, workdir, name: "demo" });
   assert.equal(await fs.readFile(path.join(root, "session", "PROGRESS.md"), "utf8"), "edited\n");
+});
+
+test("a pause sentinel stops the loop cleanly without running a stage", async () => {
+  const root = await tempDir();
+  await fs.writeFile(path.join(root, "PROGRESS.md"), "## Checklist\n- [ ] T1 - x\n\n## Log\n");
+  const configPath = path.join(root, "imhelping.json");
+  await writeJson(configPath, {
+    session: { name: "pause", workdir: root, progress: "PROGRESS.md", logs: "logs" },
+    implementation: { engine: "codex" },
+    reviews: [],
+  });
+  const config = await readConfig(configPath);
+
+  await cmdPause(config);
+  assert.ok(fsSync.existsSync(config.pauseFile));
+
+  // cmdLoop returns the paused code before spawning any engine (codex is not
+  // even on PATH here, so reaching a stage would throw).
+  assert.equal(await cmdLoop(config), 14);
+  assert.doesNotMatch(await fs.readFile(path.join(root, "PROGRESS.md"), "utf8"), /DONE/);
+
+  await cmdResume(config);
+  assert.ok(!fsSync.existsSync(config.pauseFile));
 });
 
 for (const engine of ["codex", "claude"]) {
