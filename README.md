@@ -196,6 +196,16 @@ The runner scans each stage log for quota, usage, rate-limit, and reset strings.
 If found, it sleeps until the parsed reset hint or `retrySleep`, then retries the
 same stage without advancing the ledger. `retryMax` caps repeated failures.
 
+## No-progress retries
+
+If a stage exits cleanly but does not update the ledger (often an engine that
+misread the ledger and stopped without logging), the runner re-spawns a fresh
+session up to `noProgressRetryMax` times (default 1) instead of treating the
+no-op as fatal. If it still logs nothing, the runner appends a `STUCK` line that
+points at the stage log and stops, so a silent no-op never vanishes without a
+trace. The message distinguishes a pure no-op from a stage that changed the
+worktree but forgot to log.
+
 Tests use fake `codex` and `claude` executables to verify both provider paths:
 
 ```bash
