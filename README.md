@@ -41,10 +41,22 @@ imhelping init   --plan PLAN.md --workdir DIR   # scaffold a session
 imhelping status --config imhelping.json        # print next action, no run
 imhelping once   --config imhelping.json        # run the next ready stage
 imhelping loop   --config imhelping.json        # run until done or blocked
+imhelping pause  --config imhelping.json        # clean pause after current stage
+imhelping resume --config imhelping.json        # clear the pause
 ```
 
 `once` runs the next ready stage. `loop` keeps running stages until the ledger is
 complete, blocked, or a real failure occurs.
+
+## Pausing a run
+
+`pause` writes a sentinel file (`imhelping.pause`, next to the config by default;
+override with `session.pauseFile`). A running `loop` checks it at each stage
+boundary: the in-flight stage finishes (commit + log), then the loop stops
+cleanly with exit code 14, leaving the ledger consistent and resumable. `resume`
+removes the sentinel so `loop` can continue. This is the clean way to stop a long
+unattended run; Ctrl-C is a hard stop that can leave the in-flight stage
+half-done.
 
 ## Ledger Contract
 
