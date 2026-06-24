@@ -235,6 +235,35 @@ test("init scaffolds a usable config and ledger next to the plan doc", async () 
   assert.equal(await fs.readFile(path.join(root, "session", "PROGRESS.md"), "utf8"), "edited\n");
 });
 
+test("a stage that exits without logging gets a STUCK safety-net line", async () => {
+  const root = await tempDir();
+  await fs.writeFile(path.join(root, "PROGRESS.md"), "## Checklist\n- [ ] T1 - x\n\n## Log\n");
+  await fs.writeFile(path.join(root, "PROMPT.md"), "do it\n");
+  const binDir = path.join(root, "bin");
+  await fs.mkdir(binDir);
+  const script = path.join(binDir, "codex");
+  // fake engine: consume the prompt, exit 0, write nothing to the ledger.
+  await fs.writeFile(script, "#!/usr/bin/env bash\ncat >/dev/null\nexit 0\n");
+  await fs.chmod(script, 0o755);
+  const configPath = path.join(root, "imhelping.json");
+  await writeJson(configPath, {
+    session: { name: "silent", workdir: root, progress: "PROGRESS.md", logs: "logs" },
+    implementation: { engine: "codex", prompt: "PROMPT.md", status: "DONE" },
+    reviews: [],
+  });
+  const oldPath = process.env.PATH || "";
+  try {
+    process.env.PATH = `${binDir}:${oldPath}`;
+    assert.equal(await cmdOnce(await readConfig(configPath)), 3);
+    assert.match(
+      await fs.readFile(path.join(root, "PROGRESS.md"), "utf8"),
+      /T1 — STUCK .*exited without logging/,
+    );
+  } finally {
+    process.env.PATH = oldPath;
+  }
+});
+
 test("a pause sentinel stops the loop cleanly without running a stage", async () => {
   const root = await tempDir();
   await fs.writeFile(path.join(root, "PROGRESS.md"), "## Checklist\n- [ ] T1 - x\n\n## Log\n");
