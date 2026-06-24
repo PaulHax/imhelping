@@ -1,0 +1,26 @@
+{
+  "name": "imhelping",
+  "version": "0.1.0",
+  "description": "Scaffold a phased red/green TDD imhelping loop from a plan doc (codex implements, claude reviews each phase).",
+  "author": {
+    "name": "Paul Elliott"
+  },
+  "homepage": "https://github.com/PaulHax/imhelping",
+  "repository": "https://github.com/PaulHax/imhelping",
+  "license": "MIT",
+  "keywords": ["tdd", "loop", "ledger", "codegen", "agents"],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "imhelping",
+    "shortDescription": "Turn a plan doc into a phased TDD loop.",
+    "longDescription": "Scaffolds an imhelping session next to a plan or BUILD doc and authors a phased red/green TDD ledger, then drives the imhelping CLI loop where codex implements each phase and claude reviews it.",
+    "developerName": "Paul Elliott",
+    "category": "Productivity",
+    "capabilities": ["Interactive", "Write"],
+    "defaultPrompt": [
+      "Set up an imhelping loop for this plan doc.",
+      "Build this BUILD.md with imhelping.",
+      "Scaffold a phased TDD ledger from this spec."
+    ]
+  }
+}

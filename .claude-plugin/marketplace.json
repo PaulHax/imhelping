@@ -7,7 +7,7 @@
   "plugins": [
     {
       "name": "imhelping",
-      "source": "./",
+      "source": "./plugins/imhelping",
       "description": "Scaffold a phased red/green TDD imhelping loop from a plan doc (codex implements, claude reviews each phase)."
     }
   ]

@@ -21,6 +21,31 @@ project. Keep one install and put each session's `imhelping.json` + `PROGRESS.md
 **next to the plan doc** it drives; the bundled prompts are resolved from the
 install, not from the session dir.
 
+## Editor plugins (Claude Code + Codex)
+
+The skill ships as a plugin for both editors from one shared `SKILL.md` under
+`plugins/imhelping/`. Point an editor at a plan doc and it scaffolds the session,
+authors a phased red/green TDD ledger, and hands over the loop command.
+
+Claude Code:
+
+```
+/plugin marketplace add PaulHax/imhelping
+/plugin install imhelping@imhelping
+```
+
+Codex:
+
+```
+codex plugin marketplace add PaulHax/imhelping
+codex plugin add imhelping@imhelping
+```
+
+Both read this repo as a marketplace: Claude via `.claude-plugin/marketplace.json`,
+Codex via `.agents/plugins/marketplace.json`, each pointing at the shared plugin in
+`plugins/imhelping/`. To install from a branch before it merges, append
+`--ref <branch>` to the Codex `marketplace add`.
+
 ## Quickstart
 
 ```bash
