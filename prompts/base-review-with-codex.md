@@ -63,15 +63,14 @@ Codex is advisory. Do not start implementation work for any checklist item.
     skill or command, use it. Keep only behavior-preserving cleanup: reduce
     duplicated logic, remove needless indirection, tighten names and boundaries,
     simplify tests without weakening assertions.
-13. If you edited anything, run the narrowest gate that covers the review fix.
-14. Commit review fixes using the project's commit style.
-15. Append exactly one ledger log line, recording the second reviewer's tally
+13. Commit review fixes using the project's commit style.
+14. Append exactly one ledger log line, recording the second reviewer's tally
     (`<n>` Codex findings seen, `<m>` applied; use `codex: n/a` if it was
     unavailable):
     - Clean: `<UTC> <item-id> <impl-commit> REVIEWED-A OK <evidence> (codex: <n>/<m>)`
     - Fixed: `<UTC> <item-id> <impl-commit> REVIEWED-A fixed in <fix-commit>: <summary> (codex: <n>/<m>)`
     - Failed: `<UTC> <item-id> <impl-commit> REVIEW-FAIL <summary>`
-16. Stop.
+15. Stop.
 
 ## Hard Rules
 
