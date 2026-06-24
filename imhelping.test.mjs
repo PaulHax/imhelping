@@ -235,6 +235,41 @@ test("init scaffolds a usable config and ledger next to the plan doc", async () 
   assert.equal(await fs.readFile(path.join(root, "session", "PROGRESS.md"), "utf8"), "edited\n");
 });
 
+test("a no-op stage is retried with a fresh session and then succeeds", async () => {
+  const root = await tempDir();
+  const progress = path.join(root, "PROGRESS.md");
+  await fs.writeFile(progress, "## Checklist\n- [ ] T1 - x\n\n## Log\n");
+  await fs.writeFile(path.join(root, "PROMPT.md"), "do it\n");
+  const binDir = path.join(root, "bin");
+  await fs.mkdir(binDir);
+  const state = path.join(root, "noop.once");
+  const script = path.join(binDir, "codex");
+  // first call: consume prompt, no-op. second call: log a DONE line.
+  await fs.writeFile(
+    script,
+    `#!/usr/bin/env bash
+cat >/dev/null
+if [ ! -f ${JSON.stringify(state)} ]; then touch ${JSON.stringify(state)}; exit 0; fi
+printf '2026-01-01T00:00:00Z T1 abc DONE second try\\n' >> ${JSON.stringify(progress)}
+`,
+  );
+  await fs.chmod(script, 0o755);
+  const configPath = path.join(root, "imhelping.json");
+  await writeJson(configPath, {
+    session: { name: "noop", workdir: root, progress: "PROGRESS.md", logs: "logs" },
+    implementation: { engine: "codex", prompt: "PROMPT.md", status: "DONE" },
+    reviews: [],
+  });
+  const oldPath = process.env.PATH || "";
+  try {
+    process.env.PATH = `${binDir}:${oldPath}`;
+    assert.equal(await cmdOnce(await readConfig(configPath)), 0);
+    assert.match(await fs.readFile(progress, "utf8"), /T1 abc DONE second try/);
+  } finally {
+    process.env.PATH = oldPath;
+  }
+});
+
 test("a stage that exits without logging gets a STUCK safety-net line", async () => {
   const root = await tempDir();
   await fs.writeFile(path.join(root, "PROGRESS.md"), "## Checklist\n- [ ] T1 - x\n\n## Log\n");
@@ -257,7 +292,7 @@ test("a stage that exits without logging gets a STUCK safety-net line", async ()
     assert.equal(await cmdOnce(await readConfig(configPath)), 3);
     assert.match(
       await fs.readFile(path.join(root, "PROGRESS.md"), "utf8"),
-      /T1 — STUCK .*exited without logging/,
+      /T1 — STUCK .*exited without updating the ledger/,
     );
   } finally {
     process.env.PATH = oldPath;

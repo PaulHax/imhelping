@@ -144,6 +144,9 @@ export async function readConfig(configPath) {
     retryMaxSleep: Number(session.retryMaxSleep ?? session.retry_max_sleep ?? 21600),
     retryBuffer: Number(session.retryBuffer ?? session.retry_buffer ?? 30),
     retryMax: Number(session.retryMax || session.retry_max || 24),
+    noProgressRetryMax: Number(
+      session.noProgressRetryMax ?? session.no_progress_retry_max ?? 1,
+    ),
     requireProgressChange:
       session.requireProgressChange ?? session.require_progress_change ?? true,
     logAfter: session.logAfter || session.log_after || "",
@@ -412,6 +415,7 @@ async function runReadyStage(config, action) {
   if (!fsSync.existsSync(stage.prompt)) throw new Error(`Missing prompt: ${stage.prompt}`);
   await fs.mkdir(config.logs, { recursive: true });
 
+  let noProgressAttempts = 0;
   for (let attempt = 1; ; attempt += 1) {
     const beforeProgress = await progressHash(config);
     const beforeWatch = await watchedFingerprint(config);
@@ -435,13 +439,24 @@ async function runReadyStage(config, action) {
         return 0;
       }
       if (!(await logHasLimit(logPath))) {
-        console.log(`${stage.label} exited 0 but did not update the ledger.`);
-        // Safety net: the stage stopped without recording why. Leave a STUCK
-        // line so the silent stop is visible (and points at the log), rather
-        // than the loop bailing with no trace in the ledger.
+        // Distinguish "did work but forgot to log" from a pure no-op; the first
+        // is a recoverable ledger-sync slip, the second usually a misread that a
+        // fresh session fixes. Both are retried before giving up.
+        noProgressAttempts += 1;
+        const what = watchedChanged
+          ? "changed the worktree but did not log an outcome"
+          : "exited without updating the ledger";
+        if (noProgressAttempts <= config.noProgressRetryMax) {
+          console.log(`${stage.label} ${what}; retrying with a fresh session (${noProgressAttempts}/${config.noProgressRetryMax}).`);
+          continue;
+        }
+        // Out of no-progress retries: leave a STUCK line so the silent stop is
+        // visible (and points at the log) instead of the loop bailing with no
+        // trace in the ledger.
+        console.log(`${stage.label} ${what} after ${noProgressAttempts} tries.`);
         await appendProgress(
           config,
-          `${utcLogTime()} ${item.itemId} — STUCK ${stage.label} exited without logging an outcome (see ${path.basename(logPath)})`,
+          `${utcLogTime()} ${item.itemId} — STUCK ${stage.label} ${what} (see ${path.basename(logPath)})`,
         );
         return 3;
       }
