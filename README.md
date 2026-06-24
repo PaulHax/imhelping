@@ -197,7 +197,10 @@ ownership, edit the relevant `engine` value. To disable a review stage, set
 by default. The Claude reviewer kicks off an independent `codex` reviewer in the
 background, reviews the same diff itself, then merges and de-duplicates the two
 sets of findings and applies the fixes it can confirm. Claude owns the final
-decision; Codex is advisory. The second reviewer is best-effort: if `codex` is
+decision; Codex is advisory. Both reviewers judge a frozen diff (no edits during
+review), and the behavior-preserving simplification pass runs last, after both
+correctness reviews are settled, so its broad file changes never move the target
+out from under a reviewer. The second reviewer is best-effort: if `codex` is
 missing or errors, the stage logs that and proceeds on Claude's review alone, so
 it never stalls the loop. Each review log line records the Codex tally
 (`codex: <seen>/<applied>`). To drop the second opinion, point the review

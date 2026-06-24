@@ -40,7 +40,9 @@ Codex is advisory. Do not start implementation work for any checklist item.
    The second reviewer is best-effort: if `codex` is missing, errors, or
    produces no usable output, note that and continue with your own review only.
    NEVER block, retry in a loop, or stall the run on the second reviewer.
-8. While Codex runs, perform your own correctness review of only that diff:
+8. While Codex runs, perform your own correctness review of only that diff.
+   Make NO file edits in this window: both reviewers must judge the same frozen
+   diff and produce findings only. Look for:
    - missed or contradicted requirements
    - broken imports, API misuse, wrong control flow, bad async behavior
    - missing null, empty, error, or boundary handling
@@ -48,16 +50,19 @@ Codex is advisory. Do not start implementation work for any checklist item.
    - log claims not supported by the diff or gate evidence
    - scope creep into future checklist items
 9. Collect the Codex findings: wait for the background job to finish, then read
-   `logs/codex-review.txt`.
+   `logs/codex-review.txt`. The diff stays frozen until both reviews are in.
 10. Merge and de-duplicate. Combine your findings with Codex's and drop
     duplicates that point at the same file, line, or mechanism. For each unique
     finding, keep it only if you independently judge it correct and in scope.
     Do not apply a Codex finding you cannot confirm against the diff.
 11. Apply the smallest scoped fixes for the merged, confirmed set.
-12. Run a simplification pass on only the changed files. If the CLI provides a
-    native simplify skill or command, use it. Keep only behavior-preserving
-    cleanup: reduce duplicated logic, remove needless indirection, tighten names
-    and boundaries, simplify tests without weakening assertions.
+12. Simplify LAST. Only after both correctness reviews are in and their fixes
+    applied, run a single simplification pass on the changed files as the final
+    step before the gate. A simplify pass tends to rewrite many files, so it
+    must never overlap the review window. If the CLI provides a native simplify
+    skill or command, use it. Keep only behavior-preserving cleanup: reduce
+    duplicated logic, remove needless indirection, tighten names and boundaries,
+    simplify tests without weakening assertions.
 13. If you edited anything, run the narrowest gate that covers the review fix.
 14. Commit review fixes using the project's commit style.
 15. Append exactly one ledger log line, recording the second reviewer's tally
@@ -75,6 +80,9 @@ Codex is advisory. Do not start implementation work for any checklist item.
   confirm against the diff.
 - The second reviewer is best-effort. If Codex is unavailable or errors, log
   that and proceed; never stall the loop on it.
+- Make no file edits while either reviewer is producing findings; both review
+  the same frozen diff. Run the simplification pass last, after correctness is
+  settled, never in parallel with review.
 - Do not tick checklist items.
 - Do not run broad refactors or use simplification as a reason for redesign.
 - Do not push.
