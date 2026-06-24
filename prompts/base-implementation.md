@@ -19,8 +19,10 @@ ledger, then stop. A fresh session handles the next item.
 1. Get your bearings: run `pwd`, inspect `git status`, read recent git history,
    and read the ledger top to bottom.
 2. If the ledger names a preflight, smoke test, or init command, run it before
-   starting new implementation work. If the baseline is broken, stop and log the
-   blocker instead of making it worse.
+   starting new implementation work. If the baseline is already red, do not make
+   it worse: append a `STUCK` line naming exactly what failed (which check, which
+   tests, the error) and whether it looks pre-existing or left by unfinished work
+   on the current item, then stop.
 3. Stop immediately if any checklist item contains `**BLOCKED**`.
 4. If any item has a `DONE` or `PARTIAL` log entry but lacks a required later
    review or verifier status, do not start new work. Report that review is
@@ -35,15 +37,26 @@ ledger, then stop. A fresh session handles the next item.
 9. Run the gate command(s) named by the item or ledger. Run commands in the
    foreground and wait for completion.
 10. If the gate is green, commit scoped changes using the project's commit style.
-11. Update the ledger: tick the item and append one concise log line:
+11. On success, update the ledger: tick the item and append one concise log line:
     `<UTC> <item-id> <commit-or-paths> DONE <short evidence>`.
-12. If the gate is red and cannot be fixed in this session, restore only edits
-    you made when ownership is clear, then append:
-    `<UTC> <item-id> — STUCK <failure and attempted fix>`.
-13. Stop.
+12. If you cannot finish the item this session for ANY reason (red gate, blocked
+    dependency, ambiguous spec, ran low on time or budget), restore only the
+    edits you own, then append exactly one line stating the status and a SPECIFIC
+    reason:
+    - committed partial gate-green progress:
+      `<UTC> <item-id> <commit> PARTIAL <what landed, what remains>`
+    - otherwise:
+      `<UTC> <item-id> — STUCK <what stopped you, what you tried, what the next session needs>`
+13. Before ending your turn, confirm the ledger has exactly one new log line for
+    this session. Never stop without one. Then stop.
 
 ## Hard Rules
 
+- Never end your turn without appending exactly one ledger log line recording the
+  outcome and a specific reason: `DONE`, `PARTIAL`, or `STUCK`. A silent exit (no
+  new log line) leaves the loop unable to tell why work stopped and is always a
+  bug. "Reason" means the concrete cause (the failing check and its output, the
+  missing input, the blocker), not just a status word.
 - Complete one item only.
 - Never advance past a red gate.
 - Never start review or verification yourself.

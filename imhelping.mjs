@@ -436,6 +436,13 @@ async function runReadyStage(config, action) {
       }
       if (!(await logHasLimit(logPath))) {
         console.log(`${stage.label} exited 0 but did not update the ledger.`);
+        // Safety net: the stage stopped without recording why. Leave a STUCK
+        // line so the silent stop is visible (and points at the log), rather
+        // than the loop bailing with no trace in the ledger.
+        await appendProgress(
+          config,
+          `${utcLogTime()} ${item.itemId} — STUCK ${stage.label} exited without logging an outcome (see ${path.basename(logPath)})`,
+        );
         return 3;
       }
     }
