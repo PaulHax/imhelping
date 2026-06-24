@@ -555,11 +555,11 @@ Durable loop state for imhelping. ${planLine}
 
 ## Checklist
 
-- [ ] T1 — <first item title>
+- [ ] T1 - <first item title>
   - Brief: <what to do; reference the plan section and file:symbol touch points>.
   - Done means: <observable acceptance>.
   - TDD: write <the failing test> first (red), then <green criteria>.
-  - E2E: <assertion on rendered/observable output, or "n/a — pure unit">.
+  - E2E: <assertion on rendered/observable output, or "n/a, pure unit">.
   - Scope: APP only.
   - Gate: GATE-APP.
 

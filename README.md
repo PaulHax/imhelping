@@ -124,12 +124,12 @@ Reusable base prompts live under [prompts](prompts/):
 
 Each stage's `prompt` is optional and resolves in three forms:
 
-- **omitted** — the bundled default (`base-implementation` for the
+- **omitted**: the bundled default (`base-implementation` for the
   implementation stage, `base-review` for a review stage).
-- **a bare name** like `"base-review-with-simplify"` — resolved from the
+- **a bare name** like `"base-review-with-simplify"`: resolved from the
   installed `prompts/` dir, so a config beside a plan doc needs no path back into
   this checkout.
-- **a path** — resolved relative to the config file.
+- **a path**: resolved relative to the config file.
 
 Use the base prompts across projects and put project-specific paths, gates,
 constraints, and item briefs in the ledger. See
