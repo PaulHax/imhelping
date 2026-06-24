@@ -10,6 +10,10 @@ It keeps state outside the model context:
 
 Each implementation or review stage starts as a fresh CLI process.
 
+`loop` is the point: it drives stage after stage, unattended, until the ledger is
+complete or something needs a human. `status`, `once`, and `stage` exist to
+inspect or single-step the same machinery while you debug a run.
+
 ## Install
 
 ```bash
@@ -63,15 +67,18 @@ you pass `--force`.
 
 ```bash
 imhelping init   --plan PLAN.md --workdir DIR   # scaffold a session
-imhelping status --config imhelping.json        # print next action, no run
-imhelping once   --config imhelping.json        # run the next ready stage
-imhelping loop   --config imhelping.json        # run until done or blocked
-imhelping pause  --config imhelping.json        # clean pause after current stage
+imhelping loop   --config imhelping.json        # the main mode: run until done or blocked
+imhelping pause  --config imhelping.json        # clean pause after the current stage
 imhelping resume --config imhelping.json        # clear the pause
+imhelping status --config imhelping.json        # show the next action, no run (debug)
+imhelping once   --config imhelping.json        # run one stage and stop (debug)
+imhelping stage  --config imhelping.json KEY    # run one named stage if it's next (debug)
 ```
 
-`once` runs the next ready stage. `loop` keeps running stages until the ledger is
-complete, blocked, or a real failure occurs.
+`loop` is the main mode: it runs stages until the ledger is complete, blocked, or
+a real failure occurs. `status`, `once`, and `stage` single-step the same loop for
+debugging: `once` runs the next ready stage, `stage` runs a named one if it's
+next, and `status` just prints what would run.
 
 ## Pausing a run
 
@@ -222,5 +229,3 @@ npm test
   review or simplify tools if available.
 - Keep verifier prompts read-only and have them write a JSON verdict file; the
   runner can append `VERIFIED` or mark the item blocked.
-- Use `loop` for long unattended runs when every configured stage can run
-  non-interactively.
