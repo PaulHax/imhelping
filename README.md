@@ -157,6 +157,7 @@ Reusable base prompts live under [prompts](prompts/):
 - [base-implementation.md](prompts/base-implementation.md)
 - [base-review.md](prompts/base-review.md)
 - [base-review-with-simplify.md](prompts/base-review-with-simplify.md)
+- [base-review-with-codex.md](prompts/base-review-with-codex.md)
 - [base-verifier.md](prompts/base-verifier.md)
 
 Each stage's `prompt` is optional and resolves in three forms:
@@ -189,6 +190,18 @@ Engines:
 Per-stage `model` and `args` are optional. To switch implementation or review
 ownership, edit the relevant `engine` value. To disable a review stage, set
 `enabled` to `false` or `engine` to `none`.
+
+## Parallel second reviewer (default)
+
+`init` wires the review stage to [base-review-with-codex.md](prompts/base-review-with-codex.md)
+by default. The Claude reviewer kicks off an independent `codex` reviewer in the
+background, reviews the same diff itself, then merges and de-duplicates the two
+sets of findings and applies the fixes it can confirm. Claude owns the final
+decision; Codex is advisory. The second reviewer is best-effort: if `codex` is
+missing or errors, the stage logs that and proceeds on Claude's review alone, so
+it never stalls the loop. Each review log line records the Codex tally
+(`codex: <seen>/<applied>`). To drop the second opinion, point the review
+`prompt` at `base-review-with-simplify` (or `base-review`) instead.
 
 ## Usage-Limit Handling
 
