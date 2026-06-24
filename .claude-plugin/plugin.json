@@ -1,0 +1,11 @@
+{
+  "name": "imhelping",
+  "description": "Scaffold a phased red/green TDD imhelping loop from a plan doc (codex implements, claude reviews each phase).",
+  "version": "0.1.0",
+  "author": {
+    "name": "Paul Elliott"
+  },
+  "homepage": "https://github.com/PaulHax/imhelping",
+  "repository": "https://github.com/PaulHax/imhelping",
+  "license": "MIT"
+}

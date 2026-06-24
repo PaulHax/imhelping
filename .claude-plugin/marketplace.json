@@ -1,0 +1,14 @@
+{
+  "name": "imhelping",
+  "description": "Scaffold and run phased red/green TDD loops from a plan doc with the imhelping CLI.",
+  "owner": {
+    "name": "Paul Elliott"
+  },
+  "plugins": [
+    {
+      "name": "imhelping",
+      "source": "./",
+      "description": "Scaffold a phased red/green TDD imhelping loop from a plan doc (codex implements, claude reviews each phase)."
+    }
+  ]
+}
