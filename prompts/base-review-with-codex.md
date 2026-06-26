@@ -20,18 +20,20 @@ fixes. You own the final decision; Codex is advisory.
 5. Read the target item's brief and referenced documents.
 6. Capture the exact commit range or changed-file list from the implementation
    log line; hand it to Codex verbatim.
-7. Launch Codex in the background **first**:
+7. Launch Codex in the background **first**, writing its output to a temp file
+   **outside the worktree** so it never leaves an untracked file that the next
+   implementation session reads as a dirty tree and stops on:
    ```
    codex exec 'Second-opinion reviewer. Review ONLY diff: <RANGE>.
    List findings as "<file>:<line> - <issue> - <fix>". Print "NO FINDINGS" if
-   none. No edits, no gates.' > logs/codex-review.txt 2>&1 &
+   none. No edits, no gates.' > "${TMPDIR:-/tmp}/imhelping-codex-review.txt" 2>&1 &
    ```
    If `codex` is missing or errors, note it and continue alone. Never stall.
 8. While Codex runs, review the same frozen diff yourself. No file edits yet.
    Look for: missed requirements, broken imports/API/control-flow/async,
    missing error/null/boundary handling, test gaps, unsupported log claims,
    scope creep.
-9. Wait for Codex to finish; read `logs/codex-review.txt`.
+9. Wait for Codex to finish; read `${TMPDIR:-/tmp}/imhelping-codex-review.txt`.
 10. Merge findings: drop duplicates; keep a Codex finding only if you can
     independently confirm it against the diff.
 11. Apply the smallest scoped fixes for confirmed findings.
