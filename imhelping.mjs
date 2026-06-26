@@ -308,7 +308,26 @@ function commandForStage(config, stage, lastMessage) {
   throw new Error(`Unknown engine for ${stage.label}: ${stage.engine}`);
 }
 
-async function teeRun(commandSpec, cwd, prompt, logPath) {
+// Authoritative context written ahead of the bundled prompt so the engine
+// targets THIS session's ledger and worktree instead of discovering an
+// arbitrary PROGRESS.md under an added directory (sibling sessions leave their
+// own ledgers reachable via --add-dir, which made ledger pickup nondeterministic).
+function sessionPreamble(config) {
+  return [
+    "## Session context (authoritative — overrides any default in the prompt below)",
+    "",
+    `- This session's ledger is the file at: ${config.progress}`,
+    "  Read and update ONLY that file. Ignore any other PROGRESS.md reachable",
+    "  under an added directory — those belong to other sessions.",
+    `- The repository/worktree to edit and commit in is: ${config.workdir}`,
+    "",
+    "---",
+    "",
+    "",
+  ].join("\n");
+}
+
+async function teeRun(commandSpec, cwd, prompt, logPath, preamble = "") {
   await fs.mkdir(path.dirname(logPath), { recursive: true });
   const log = fsSync.createWriteStream(logPath, { flags: "w" });
   const child = spawn(commandSpec.command, commandSpec.args, {
@@ -321,6 +340,7 @@ async function teeRun(commandSpec, cwd, prompt, logPath) {
   const input = createReadStream(prompt);
   input.on("error", () => {});
   child.stdin.on("error", () => {});
+  if (preamble) child.stdin.write(preamble);
   input.pipe(child.stdin);
   const writeChunk = (chunk) => {
     process.stdout.write(chunk);
@@ -424,7 +444,13 @@ async function runReadyStage(config, action) {
     console.log(`=== ${config.name}: ${stage.label} for ${item.itemId} (${stage.engine}, attempt ${attempt}/${config.retryMax}) ===`);
     console.log(`log: ${logPath}`);
 
-    const status = await teeRun(commandForStage(config, stage, lastMessage), config.workdir, stage.prompt, logPath);
+    const status = await teeRun(
+      commandForStage(config, stage, lastMessage),
+      config.workdir,
+      stage.prompt,
+      logPath,
+      sessionPreamble(config),
+    );
     if (stage.cleanupAfter) cleanupWorktree(config);
 
     const verdictOk = await processVerdict(config, stage, item);

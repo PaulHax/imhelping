@@ -359,3 +359,45 @@ for (const engine of ["codex", "claude"]) {
     }
   });
 }
+
+test("engine stdin names this session's ledger ahead of the prompt body", async () => {
+  const root = await tempDir();
+  const progress = path.join(root, "PROGRESS.md");
+  await fs.writeFile(progress, "## Checklist\n- [ ] T1 - x\n\n## Log\n");
+  await fs.writeFile(path.join(root, "PROMPT.md"), "BODY-MARKER do it\n");
+  const binDir = path.join(root, "bin");
+  await fs.mkdir(binDir);
+  const capture = path.join(root, "captured-stdin.txt");
+  const script = path.join(binDir, "codex");
+  // fake engine: capture the full prompt stream, then log a DONE line.
+  await fs.writeFile(
+    script,
+    `#!/usr/bin/env bash
+cat > ${JSON.stringify(capture)}
+printf '2026-01-01T00:00:00Z T1 abc DONE captured\\n' >> ${JSON.stringify(progress)}
+`,
+  );
+  await fs.chmod(script, 0o755);
+  const configPath = path.join(root, "imhelping.json");
+  await writeJson(configPath, {
+    session: { name: "preamble", workdir: root, progress: "PROGRESS.md", logs: "logs" },
+    implementation: { engine: "codex", prompt: "PROMPT.md", status: "DONE" },
+    reviews: [],
+  });
+  const oldPath = process.env.PATH || "";
+  try {
+    process.env.PATH = `${binDir}:${oldPath}`;
+    assert.equal(await cmdOnce(await readConfig(configPath)), 0);
+    const stdin = await fs.readFile(capture, "utf8");
+    // the resolved (absolute) ledger path is named authoritatively...
+    assert.match(stdin, new RegExp(`ledger is the file at: ${progress.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`));
+    // ...ahead of the bundled prompt body, which is still delivered.
+    assert.match(stdin, /BODY-MARKER do it/);
+    assert.ok(
+      stdin.indexOf(progress) < stdin.indexOf("BODY-MARKER"),
+      "session context must precede the prompt body",
+    );
+  } finally {
+    process.env.PATH = oldPath;
+  }
+});
