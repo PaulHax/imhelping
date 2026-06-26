@@ -401,3 +401,44 @@ printf '2026-01-01T00:00:00Z T1 abc DONE captured\\n' >> ${JSON.stringify(progre
     process.env.PATH = oldPath;
   }
 });
+
+test("a self-declared STUCK is retried then halts instead of spinning", async () => {
+  const root = await tempDir();
+  const progress = path.join(root, "PROGRESS.md");
+  await fs.writeFile(progress, "## Checklist\n- [ ] T1 - x\n\n## Log\n");
+  await fs.writeFile(path.join(root, "PROMPT.md"), "do it\n");
+  const binDir = path.join(root, "bin");
+  await fs.mkdir(binDir);
+  const script = path.join(binDir, "codex");
+  // fake engine: always log a STUCK for T1 and leave it unchecked, like an agent
+  // that hit a blocker (e.g. a dirty worktree) and stopped before editing.
+  await fs.writeFile(
+    script,
+    `#!/usr/bin/env bash
+cat >/dev/null
+printf '2026-01-01T00:00:00Z T1 — STUCK baseline already red\\n' >> ${JSON.stringify(progress)}
+`,
+  );
+  await fs.chmod(script, 0o755);
+  const configPath = path.join(root, "imhelping.json");
+  await writeJson(configPath, {
+    session: { name: "stuck", workdir: root, progress: "PROGRESS.md", logs: "logs" },
+    implementation: { engine: "codex", prompt: "PROMPT.md", status: "DONE" },
+    reviews: [],
+  });
+  const oldPath = process.env.PATH || "";
+  try {
+    process.env.PATH = `${binDir}:${oldPath}`;
+    // Halts (3) rather than reporting the STUCK append as success.
+    assert.equal(await cmdOnce(await readConfig(configPath)), 3);
+    const ledger = await fs.readFile(progress, "utf8");
+    // Bounded: one retry (noProgressRetryMax default 1) then stop — not a spin.
+    assert.equal((ledger.match(/STUCK baseline already red/g) || []).length, 2);
+    // The agent's own STUCK is descriptive, so no engine safety-net line is piled on.
+    assert.doesNotMatch(ledger, /exited without updating the ledger/);
+    // The item stays open for a human to unblock.
+    assert.match(ledger, /- \[ \] T1/);
+  } finally {
+    process.env.PATH = oldPath;
+  }
+});

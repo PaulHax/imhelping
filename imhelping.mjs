@@ -425,6 +425,21 @@ function cleanupWorktree(config) {
   spawnSync("git", ["clean", "-fdq"], { cwd: config.workdir, stdio: "ignore" });
 }
 
+// True when this session's newest outcome for the item is a STUCK line and the
+// item is still unchecked. A STUCK append changes the ledger but is not progress
+// ON the item — a self-declared blocker rarely clears on an identical re-run.
+// Detecting it lets the loop retry-then-halt (like a no-op) instead of reading
+// the STUCK as success and re-selecting the same item, which otherwise spins
+// until maxSteps and spams duplicate STUCK lines.
+async function loggedNewStuck(config, item, beforeCount) {
+  const { items, logs } = await readProgress(config);
+  const current = items.find((entry) => entry.itemId === item.itemId);
+  if (!current || current.checked || current.blocked) return false;
+  const entries = logsForItem(logs, item.itemId);
+  if (entries.length <= beforeCount) return false;
+  return entries[entries.length - 1].status === "STUCK";
+}
+
 async function runReadyStage(config, action) {
   if (!action.stage || !action.item) {
     console.log(action.reason || action.kind);
@@ -439,6 +454,7 @@ async function runReadyStage(config, action) {
   for (let attempt = 1; ; attempt += 1) {
     const beforeProgress = await progressHash(config);
     const beforeWatch = await watchedFingerprint(config);
+    const beforeItemLogs = logsForItem((await readProgress(config)).logs, item.itemId).length;
     const logPath = path.join(config.logs, `${stage.key}-${stage.engine}-${utcStamp()}-a${attempt}.log`);
     const lastMessage = path.join(config.logs, `${stage.key}-${stage.engine}-last-message.md`);
     console.log(`=== ${config.name}: ${stage.label} for ${item.itemId} (${stage.engine}, attempt ${attempt}/${config.retryMax}) ===`);
@@ -458,32 +474,41 @@ async function runReadyStage(config, action) {
     const afterWatch = await watchedFingerprint(config);
     const progressChanged = beforeProgress !== afterProgress;
     const watchedChanged = beforeWatch !== afterWatch;
+    // A STUCK append changes the ledger but is not real progress on the item, so
+    // treat it like a no-op rather than success — otherwise the loop re-selects
+    // the same item and spins on the identical blocker.
+    const stuckOnly = progressChanged && (await loggedNewStuck(config, item, beforeItemLogs));
 
     if (status === 0 && verdictOk) {
-      if (progressChanged || (watchedChanged && !config.requireProgressChange)) {
+      if (!stuckOnly && (progressChanged || (watchedChanged && !config.requireProgressChange))) {
         console.log(`${stage.label} complete.`);
         return 0;
       }
       if (!(await logHasLimit(logPath))) {
-        // Distinguish "did work but forgot to log" from a pure no-op; the first
-        // is a recoverable ledger-sync slip, the second usually a misread that a
-        // fresh session fixes. Both are retried before giving up.
+        // Distinguish three non-progress endings, all retried before giving up:
+        // a self-declared STUCK (a blocker a fresh session may clear), "did work
+        // but forgot to log" (a recoverable ledger-sync slip), and a pure no-op
+        // (usually a misread).
         noProgressAttempts += 1;
-        const what = watchedChanged
-          ? "changed the worktree but did not log an outcome"
-          : "exited without updating the ledger";
+        const what = stuckOnly
+          ? "logged STUCK without completing the item"
+          : watchedChanged
+            ? "changed the worktree but did not log an outcome"
+            : "exited without updating the ledger";
         if (noProgressAttempts <= config.noProgressRetryMax) {
           console.log(`${stage.label} ${what}; retrying with a fresh session (${noProgressAttempts}/${config.noProgressRetryMax}).`);
           continue;
         }
-        // Out of no-progress retries: leave a STUCK line so the silent stop is
-        // visible (and points at the log) instead of the loop bailing with no
-        // trace in the ledger.
+        // Out of retries: halt so a human sees it. A STUCK ending already left a
+        // descriptive ledger line; for the silent endings, leave one so the stop
+        // is visible (and points at the log) instead of bailing without a trace.
         console.log(`${stage.label} ${what} after ${noProgressAttempts} tries.`);
-        await appendProgress(
-          config,
-          `${utcLogTime()} ${item.itemId} — STUCK ${stage.label} ${what} (see ${path.basename(logPath)})`,
-        );
+        if (!stuckOnly) {
+          await appendProgress(
+            config,
+            `${utcLogTime()} ${item.itemId} — STUCK ${stage.label} ${what} (see ${path.basename(logPath)})`,
+          );
+        }
         return 3;
       }
     }
