@@ -1,0 +1,29 @@
+{
+  "session": {
+    "name": "claude-only",
+    "workdir": "..",
+    "progress": "PROGRESS.md",
+    "logs": "logs/imhelping",
+    "addDirs": [],
+    "watchGit": [".."],
+    "watchFiles": [],
+    "maxSteps": 40,
+    "retrySleep": 3600,
+    "retryMax": 24,
+    "logAfter": ""
+  },
+  "implementation": {
+    "engine": "claude",
+    "prompt": "base-implementation",
+    "status": "DONE"
+  },
+  "reviews": [
+    {
+      "key": "review-a",
+      "enabled": true,
+      "engine": "claude",
+      "prompt": "base-review-with-simplify",
+      "status": "REVIEWED-A"
+    }
+  ]
+}
