@@ -191,6 +191,12 @@ Per-stage `model` and `args` are optional. To switch implementation or review
 ownership, edit the relevant `engine` value. To disable a review stage, set
 `enabled` to `false` or `engine` to `none`.
 
+[examples/imhelping.claude-only.json](examples/imhelping.claude-only.json) is a
+minimal two-stage config that uses `claude` for both the implementer and a single
+reviewer (correctness review plus a behavior-preserving simplify pass) — no Codex,
+no verifier. Run it against the example ledger with
+`imhelping loop --config examples/imhelping.claude-only.json`.
+
 ## Parallel second reviewer (default)
 
 `init` wires the review stage to [base-review-with-codex.md](prompts/base-review-with-codex.md)
