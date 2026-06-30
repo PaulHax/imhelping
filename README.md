@@ -157,7 +157,6 @@ Reusable base prompts live under [prompts](prompts/):
 - [base-implementation.md](prompts/base-implementation.md)
 - [base-review.md](prompts/base-review.md)
 - [base-review-with-simplify.md](prompts/base-review-with-simplify.md)
-- [base-review-with-codex.md](prompts/base-review-with-codex.md)
 - [base-verifier.md](prompts/base-verifier.md)
 
 Each stage's `prompt` is optional and resolves in three forms:
@@ -197,20 +196,14 @@ reviewer (correctness review plus a behavior-preserving simplify pass) — no Co
 no verifier. Run it against the example ledger with
 `imhelping loop --config examples/imhelping.claude-only.json`.
 
-## Parallel second reviewer (default)
+## Default review stage
 
-`init` wires the review stage to [base-review-with-codex.md](prompts/base-review-with-codex.md)
-by default. The Claude reviewer kicks off an independent `codex` reviewer in the
-background, reviews the same diff itself, then merges and de-duplicates the two
-sets of findings and applies the fixes it can confirm. Claude owns the final
-decision; Codex is advisory. Both reviewers judge a frozen diff (no edits during
-review), and the behavior-preserving simplification pass runs last, after both
-correctness reviews are settled, so its broad file changes never move the target
-out from under a reviewer. The second reviewer is best-effort: if `codex` is
-missing or errors, the stage logs that and proceeds on Claude's review alone, so
-it never stalls the loop. Each review log line records the Codex tally
-(`codex: <seen>/<applied>`). To drop the second opinion, point the review
-`prompt` at `base-review-with-simplify` (or `base-review`) instead.
+`init` wires implementation to `codex` and the review stage to Claude with
+[base-review-with-simplify.md](prompts/base-review-with-simplify.md). Codex
+implements an item; Claude then reviews that item's frozen diff for correctness,
+applies the in-scope fixes it is confident in, and finishes with a
+behavior-preserving simplification pass on the changed files. Point the review
+`prompt` at `base-review` for a correctness-only pass without the simplify step.
 
 ## Usage-Limit Handling
 
