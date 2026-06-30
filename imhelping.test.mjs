@@ -11,7 +11,9 @@ import {
   cmdOnce,
   cmdPause,
   cmdResume,
+  formatDuration,
   nextAction,
+  parseLimitWait,
   readConfig,
 } from "./imhelping.mjs";
 
@@ -394,6 +396,74 @@ for (const engine of ["codex", "claude"]) {
     }
   });
 }
+
+test("parseLimitWait reads an absolute clock time as a delta from now", () => {
+  // The case that motivated hardening: upstream says "try again at 12:19 PM"
+  // while it is 11:55:48 local — the wait must track the quoted time, not fall
+  // back to the default hour.
+  const now = new Date(2026, 5, 30, 11, 55, 48);
+  const result = parseLimitWait(
+    "Error: usage limit reached. Please try again at 12:19 PM.",
+    now,
+  );
+  assert.equal(result.source, "clock");
+  assert.equal(result.seconds, 23 * 60 + 12); // 11:55:48 -> 12:19:00
+});
+
+test("parseLimitWait handles 24-hour clock times", () => {
+  const now = new Date(2026, 5, 30, 15, 0, 0);
+  const result = parseLimitWait("quota exhausted; try again at 16:19", now);
+  assert.equal(result.source, "clock");
+  assert.equal(result.seconds, 79 * 60); // 15:00 -> 16:19
+});
+
+test("parseLimitWait rolls a clearly-past clock time to tomorrow", () => {
+  const now = new Date(2026, 5, 30, 23, 0, 0);
+  const result = parseLimitWait("rate limit — available at 6:00 AM", now);
+  assert.equal(result.source, "clock");
+  assert.equal(result.seconds, 7 * 3600); // 23:00 -> next 06:00
+});
+
+test("parseLimitWait treats a just-passed clock time as retry-now", () => {
+  const now = new Date(2026, 5, 30, 12, 30, 0);
+  const result = parseLimitWait("try again at 12:19 PM", now);
+  assert.equal(result.source, "clock");
+  assert.equal(result.seconds, 0);
+});
+
+test("parseLimitWait reads an absolute timestamp", () => {
+  const now = new Date("2026-06-30T16:00:00Z");
+  const result = parseLimitWait(
+    "429 resource_exhausted, resets at 2026-06-30T16:19:00Z",
+    now,
+  );
+  assert.equal(result.source, "timestamp");
+  assert.equal(result.seconds, 19 * 60);
+});
+
+test("parseLimitWait sums combined relative durations", () => {
+  const result = parseLimitWait("usage limit, try again in 1h30m");
+  assert.equal(result.source, "duration");
+  assert.equal(result.seconds, 90 * 60);
+});
+
+test("parseLimitWait reads a bare Retry-After as seconds", () => {
+  const result = parseLimitWait("HTTP 429 Too Many Requests\nRetry-After: 120");
+  assert.equal(result.source, "retry-after");
+  assert.equal(result.seconds, 120);
+});
+
+test("parseLimitWait does not mistake unrelated numbers for a wait", () => {
+  const result = parseLimitWait("You have 5 requests left this minute.");
+  assert.equal(result.source, "default");
+  assert.equal(result.seconds, null);
+});
+
+test("formatDuration renders a human-readable span", () => {
+  assert.equal(formatDuration(0), "0s");
+  assert.equal(formatDuration(90), "1m30s");
+  assert.equal(formatDuration(5400), "1h30m0s");
+});
 
 test("engine stdin names this session's ledger ahead of the prompt body", async () => {
   const root = await tempDir();

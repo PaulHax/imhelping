@@ -12,8 +12,14 @@ import { spawn, spawnSync } from "node:child_process";
 const PKG_DIR = path.dirname(fileURLToPath(import.meta.url));
 const BUNDLED_PROMPTS_DIR = path.join(PKG_DIR, "prompts");
 
+// Answers "is this a limit event at all?" — deliberately broader than the wait
+// extractor, since it must also catch markers that carry no duration (429,
+// quota, insufficient_quota, ...). Detection and wait-extraction are separate
+// concerns on purpose; the matching keyword set for "where does the wait start?"
+// lives in the `window` regex inside parseLimitWait. Broaden both if you teach
+// one a new phrasing.
 const LIMIT_RE =
-  /usage limit|rate limit|spend limit|quota|insufficient_quota|too many requests|\b429\b|resource[ _]exhausted|limit (will )?reset|reset[s]? (in|at)|out of (credit|quota)|try again (later|in)|exceeded your/i;
+  /usage limit|rate[- ]?limit|spend limit|quota|insufficient_quota|too many requests|\b429\b|resource[ _]exhausted|limit (will )?reset|reset[s]? (in|at)|out of (credit|quota)|try again (later|in|at|after|soon|tomorrow)|retry[- ]?after|exceeded your/i;
 
 const CHECKBOX_RE =
   /^(\s*-\s+\[([ xX])\]\s+)((?:\*\*)?([A-Za-z0-9][A-Za-z0-9_.-]*)(?:\*\*)?.*)$/;
@@ -363,17 +369,108 @@ async function logHasLimit(logPath) {
   return LIMIT_RE.test(await fs.readFile(logPath, "utf8"));
 }
 
-async function limitWaitSeconds(config, logPath) {
-  const text = await fs.readFile(logPath, "utf8");
-  const hint = text.match(/(try again|reset[s]?|available|back) (in|at)[^.]*/i)?.[0] || "";
-  let seconds = config.retrySleep;
-  const hour = hint.match(/([0-9]+)\s*(h|hour)/i);
-  const minute = hint.match(/([0-9]+)\s*(m|min)/i);
-  const second = hint.match(/([0-9]+)\s*(s|sec)/i);
-  if (hour) seconds = Number(hour[1]) * 3600;
-  else if (minute) seconds = Number(minute[1]) * 60;
-  else if (second) seconds = Number(second[1]);
-  return Math.min(Math.max(seconds, config.retryMinSleep), config.retryMaxSleep) + config.retryBuffer;
+// Pull the wait time a provider quoted out of a limit message. Providers phrase
+// this several ways: a relative duration ("try again in 12 minutes"), an
+// absolute clock time ("try again at 12:19 PM"), a full timestamp ("resets at
+// 2026-06-30T16:19:00Z"), or an HTTP-style "Retry-After: 3600". We anchor on a
+// reset keyword first so unrelated numbers ("5 requests left") aren't mistaken
+// for a wait, then read whatever form follows. Returns the raw seconds (before
+// clamping) plus how it was derived and the matched text, so the caller can
+// print a message that lines up with the upstream wording instead of a number
+// that looks unrelated to it.
+// A clock time alone is ambiguous without a date: 6:00 AM seen at 11 PM means
+// tomorrow, but 12:19 PM seen at 12:30 PM means the reset just passed. We treat
+// a time more than this far in the past as tomorrow, and anything more recent as
+// "reset already happened, retry promptly".
+const PAST_CLOCK_GRACE_S = 6 * 3600;
+
+export function parseLimitWait(text, now = new Date()) {
+  // Anchors on a reset keyword so unrelated numbers aren't grabbed as a wait.
+  // This is the wait-extraction counterpart to LIMIT_RE's detection set; keep
+  // the two in sync when adding a phrasing.
+  const window = text.match(
+    /(try again|reset[s]?|available|back online|come back|please wait|wait|retry[- ]?after|resume)\b[^\n.]{0,80}/i,
+  )?.[0];
+  if (!window) return { seconds: null, source: "default", detail: "" };
+  const detail = window.replace(/\s+/g, " ").trim();
+  const nowMs = now.getTime();
+
+  // 1. Absolute timestamp: "...at 2026-06-30T16:19:00Z" / "2026-06-30 16:19".
+  const stamp = window.match(
+    /\d{4}-\d{2}-\d{2}[ t]\d{2}:\d{2}(?::\d{2})?(?:\s*z|[+-]\d{2}:?\d{2})?/i,
+  )?.[0];
+  if (stamp) {
+    const when = new Date(stamp.replace(/\s+/, "T"));
+    if (!Number.isNaN(when.getTime())) {
+      return { seconds: Math.max(0, (when.getTime() - nowMs) / 1000), source: "timestamp", detail };
+    }
+  }
+
+  // 2. Absolute clock time: "12:19 PM", "at 16:19", "11 PM".
+  const ampm = window.match(/\b(\d{1,2})(?::(\d{2}))?\s*([ap])\.?m\.?\b/i);
+  const h24 = window.match(/\b(?:at|by)\s+(\d{1,2}):(\d{2})\b/i);
+  if (ampm || h24) {
+    const hour = ampm
+      ? (Number(ampm[1]) % 12) + (ampm[3].toLowerCase() === "p" ? 12 : 0)
+      : Number(h24[1]);
+    const minute = ampm ? Number(ampm[2] || 0) : Number(h24[2]);
+    if (hour < 24 && minute < 60) {
+      const when = new Date(now);
+      when.setHours(hour, minute, 0, 0);
+      let delta = (when.getTime() - nowMs) / 1000;
+      if (delta < -PAST_CLOCK_GRACE_S) delta += 24 * 3600; // clearly tomorrow
+      else if (delta < 0) delta = 0; // just passed → retry promptly
+      return { seconds: delta, source: "clock", detail };
+    }
+  }
+
+  // 3. Relative duration, summing every unit token: "1h30m", "2 hours and 5 min".
+  let total = 0;
+  let matched = false;
+  for (const m of window.matchAll(
+    /(\d+(?:\.\d+)?)\s*(hours?|hrs?|h|minutes?|mins?|m|seconds?|secs?|s)(?![a-z])/gi,
+  )) {
+    const value = Number(m[1]);
+    const unit = m[2][0].toLowerCase();
+    total += unit === "h" ? value * 3600 : unit === "m" ? value * 60 : value;
+    matched = true;
+  }
+  if (matched) return { seconds: total, source: "duration", detail };
+
+  // 4. HTTP "Retry-After: 3600" — a bare number means seconds.
+  const after = window.match(/retry[- ]?after[:\s]+(\d+)\b/i);
+  if (after) return { seconds: Number(after[1]), source: "retry-after", detail };
+
+  return { seconds: null, source: "default", detail };
+}
+
+// Resolve the parsed wait into the actual sleep: fall back to the default when
+// nothing was quoted, then clamp to the configured bounds and add the buffer.
+// Keeps `source`/`detail` (the raw parse provenance) distinct from the final
+// `sleepSeconds` so the two layers can't be conflated.
+async function limitWaitSeconds(config, logPath, now = new Date()) {
+  const { seconds, source, detail } = parseLimitWait(
+    await fs.readFile(logPath, "utf8"),
+    now,
+  );
+  const raw = seconds == null ? config.retrySleep : seconds;
+  const sleepSeconds =
+    Math.min(Math.max(raw, config.retryMinSleep), config.retryMaxSleep) +
+    config.retryBuffer;
+  return { sleepSeconds, source, detail };
+}
+
+export function formatDuration(seconds) {
+  const s = Math.max(0, Math.round(seconds));
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  return [h ? `${h}h` : "", h || m ? `${m}m` : "", `${s % 60}s`]
+    .filter(Boolean)
+    .join("");
+}
+
+function formatClock(date) {
+  return date.toTimeString().slice(0, 8);
 }
 
 function sleep(seconds) {
@@ -524,9 +621,17 @@ async function runReadyStage(config, action) {
         console.log(`${stage.label} still limited after ${attempt} attempts.`);
         return 4;
       }
-      const waitSeconds = await limitWaitSeconds(config, logPath);
-      console.log(`Limit detected. Sleeping ${waitSeconds}s before retrying the same stage.`);
-      await sleep(waitSeconds);
+      const now = new Date();
+      const { sleepSeconds, source, detail } = await limitWaitSeconds(config, logPath, now);
+      const wakeAt = new Date(now.getTime() + sleepSeconds * 1000);
+      const origin =
+        source === "default"
+          ? "no reset time found in the log; using the configured default"
+          : `read from "${detail}"`;
+      console.log(
+        `Limit detected (${stage.label}). Sleeping ${formatDuration(sleepSeconds)} (until ${formatClock(wakeAt)}) before retrying the same stage — ${origin}.`,
+      );
+      await sleep(sleepSeconds);
       continue;
     }
 
