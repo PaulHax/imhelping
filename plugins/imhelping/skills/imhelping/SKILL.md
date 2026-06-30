@@ -82,12 +82,11 @@ checkout). It needs `node >= 22` and the `codex` and/or `claude` CLIs on PATH.
    print `next implementation item=<first-id>`. Fix the ledger if it reports
    "no checkbox items" (ids missing) or "blocked".
 7. **Hand over or run.** Print the run commands. If the user asked you to set up
-   *and* run, continue to **Run the loop**. Otherwise stop here — `loop` commits
-   unattended across many sessions, so don't start it uninvited.
+   *and* run, continue to **Run the loop** (start `loop`). Otherwise stop here —
+   `loop` commits unattended across many sessions, so don't start it uninvited.
    ```
-   imhelping status --config <plan-dir>/imhelping.json   # next action, no run
-   imhelping once   --config <plan-dir>/imhelping.json   # run one stage
-   imhelping loop   --config <plan-dir>/imhelping.json   # run until done/blocked
+   imhelping status --config <plan-dir>/imhelping.json   # preview next action, no run
+   imhelping loop   --config <plan-dir>/imhelping.json   # run until done or blocked
    ```
 
 ## Run the loop
@@ -109,11 +108,13 @@ When the user asks you to run / kick off the loop, or points you at an existing
    ```
    It prints e.g. `next review-a item=P1 ...`. If it reports an unexpected stage
    or `no checkbox items`, the ledger format is off — see **Ledger contract**.
-3. **Run it:**
+3. **Start the loop.** This is almost always what the user wants — run it, don't
+   ask whether to run a single stage first:
    ```
-   imhelping once --config <ledger-dir>/imhelping.json   # one stage, to sanity-check
    imhelping loop --config <ledger-dir>/imhelping.json   # until done or blocked
    ```
+   (`imhelping once` runs a single stage and is only for debugging one phase by
+   hand — don't offer it as the normal way to run.)
 4. **Expect silence.** Each stage runs an engine headless; `claude -p` and
    `codex exec` may print nothing until the stage finishes, which can take
    several minutes, so the stage log sits empty meanwhile. That is NOT a hang —
