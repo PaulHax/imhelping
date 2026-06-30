@@ -83,7 +83,7 @@ checkout). It needs `node >= 22` and the `codex` and/or `claude` CLIs on PATH.
 - **Sessions live next to the plan doc.** Never put `imhelping.json` / `PROGRESS.md`
   inside the imhelping checkout. Bundled prompts resolve from the install, so the
   config needs no path back into the checkout (omit `prompt`, or use a bare name
-  like `base-review-with-codex`).
+  like `base-review-with-simplify`).
 - **WSL projects:** run `imhelping`, `node`, and the engines through the shell
   where they are installed (`wsl.exe -e bash -lc '...'` on a Windows host).
 - **Ledger contract:** ids must be the first token of the checkbox line. Log

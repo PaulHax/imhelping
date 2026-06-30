@@ -621,7 +621,7 @@ function initConfig({ name, workdir, addDirs }) {
       {
         key: "review-a",
         engine: "claude",
-        prompt: "base-review-with-codex",
+        prompt: "base-review-with-simplify",
         status: "REVIEWED-A",
       },
     ],
