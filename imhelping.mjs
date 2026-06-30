@@ -188,7 +188,12 @@ export async function readProgress(config) {
 }
 
 function parseLogLine(index, line) {
-  const parts = line.split(/\s+/, 5);
+  // Tolerate a leading Markdown list marker ("- ", "* ", "+ ") on a log entry.
+  // A ledger hand-authored by a human or an LLM naturally bullets these lines,
+  // but the timestamp must still be the first real token. Without this, a
+  // bulleted `... DONE` line is silently ignored, so the loop never sees the
+  // implementation record and skips straight past its review gate.
+  const parts = line.replace(/^\s*[-*+]\s+/, "").split(/\s+/, 5);
   if (parts.length < 3 || !/^\d{4}-\d{2}-\d{2}/.test(parts[0])) return null;
   const itemId = parts[1];
   if (KNOWN_STATUSES.has(parts[2])) {
@@ -459,6 +464,7 @@ async function runReadyStage(config, action) {
     const lastMessage = path.join(config.logs, `${stage.key}-${stage.engine}-last-message.md`);
     console.log(`=== ${config.name}: ${stage.label} for ${item.itemId} (${stage.engine}, attempt ${attempt}/${config.retryMax}) ===`);
     console.log(`log: ${logPath}`);
+    console.log(`running ${stage.engine} headless — this stage can take several minutes and may print nothing until it finishes; tail the log above to watch it. Don't interrupt it.`);
 
     const status = await teeRun(
       commandForStage(config, stage, lastMessage),

@@ -125,6 +125,41 @@ test("routes review before starting the next item", async () => {
   assert.equal(action.stage.key, "review-a");
 });
 
+test("a bulleted DONE log entry still routes to review", async () => {
+  // A hand-authored ledger often writes log lines as Markdown bullets. The
+  // timestamp is no longer the first token, so an intolerant parser drops the
+  // DONE record and the loop reports the NEXT item's implementation instead of
+  // the pending review — the exact mismatch that confused a setup session.
+  const root = await tempDir();
+  await fs.writeFile(
+    path.join(root, "PROGRESS.md"),
+    `# Progress
+
+- [x] A1 — done task
+- [ ] A2 — next task
+
+## Log
+- 2026-01-01T00:00:00Z A1 abc DONE implementation
+`,
+  );
+  await fs.writeFile(path.join(root, "AGENT.md"), "impl");
+  await fs.writeFile(path.join(root, "REVIEW.md"), "review");
+  const configPath = path.join(root, "imhelping.json");
+  await writeJson(configPath, {
+    session: { name: "bullet-log", workdir: root, progress: "PROGRESS.md", logs: "logs" },
+    implementation: { engine: "codex", prompt: "AGENT.md", status: "DONE" },
+    reviews: [
+      { key: "review-a", engine: "claude", prompt: "REVIEW.md", status: "REVIEWED-A" },
+    ],
+  });
+
+  const action = await nextAction(await readConfig(configPath));
+
+  assert.equal(action.kind, "stage");
+  assert.equal(action.item.itemId, "A1");
+  assert.equal(action.stage.key, "review-a");
+});
+
 test("conditional verifier skips unmarked items", async () => {
   const root = await tempDir();
   await fs.writeFile(
